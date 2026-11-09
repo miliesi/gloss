@@ -1,5 +1,5 @@
 import { buildMessages, isLengthKey, webBlock, type DocPayload, type ThreadPayload } from "@/lib/prompts";
-import { DEFAULT_MODEL, isModelKey, streamChat, type ChatMessage, type StreamEvent } from "@/lib/together";
+import { DEFAULT_MODEL, isModelKey, streamChat, type ChatMessage, type StreamEvent } from "@/lib/claude";
 import { ACTIONS } from "@/lib/actions";
 import { chargeFree, checkFree, estimateUsd, needKey } from "@/lib/quota";
 import { MODELS, type Usage } from "@/lib/models";
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
   // No key of their own: a few cents of answers a day on the shared key, then they bring one.
   let free: Awaited<ReturnType<typeof checkFree>> | null = null;
   if (!apiKey) {
-    if (!process.env.TOGETHER_API_KEY) return needKey(null);
+    if (!process.env.ANTHROPIC_API_KEY) return needKey(null);
     free = await checkFree(req);
     if (!free.ok) return needKey(free);
   }
@@ -114,7 +114,7 @@ export async function POST(req: Request) {
           await relay(
             [
               ...messages,
-              { role: "assistant", content: null, tool_calls: [{ id: call.id, type: "function", function: { name: call.name, arguments: call.args } }] },
+              { role: "assistant", content: null, tool_calls: [{ id: call.id, type: "function", function: { name: call.name, arguments: call.args } }], blocks: call.blocks },
               { role: "tool", tool_call_id: call.id, content: found ? webBlock(found.sources, found.excerpts) : "The search found nothing useful. Answer from the text and what you know, and say what you could not check." },
             ],
             "answer"

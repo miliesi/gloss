@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gloss settings</title>
+<style>
+  :root { --bg: #fbf8f1; --ink: #1f1b16; --ink-3: #6b6358; --rule: #e0d8c8; --rubric: #a63d2a; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1b1815; --ink: #efe9dc; --ink-3: #a39a8a; --rule: #38322a; --rubric: #e07a63; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 480px; margin: 0 auto; padding: 56px 20px; }
+  h1 { font: 600 34px/1.1 Georgia, "Times New Roman", serif; margin: 0 0 6px; }
+  p.lede { margin: 0 0 32px; color: var(--ink-3); }
+  label { display: block; margin: 22px 0 6px; font-weight: 600; font-size: 13.5px; }
+  input, select { width: 100%; box-sizing: border-box; height: 38px; padding: 0 12px; border: 1px solid var(--rule); border-radius: 8px; background: transparent; color: var(--ink); font: inherit; }
+  input:focus, select:focus { outline: 2px solid var(--rubric); outline-offset: 1px; }
+  small { display: block; margin-top: 6px; color: var(--ink-3); font-size: 12.5px; }
+  a { color: var(--rubric); }
+  button { margin-top: 28px; height: 38px; padding: 0 20px; border: 0; border-radius: 8px; background: var(--ink); color: var(--bg); font: 600 14px ui-sans-serif, system-ui, sans-serif; cursor: pointer; }
+  button:disabled { opacity: 0.6; }
+  #status { margin-left: 12px; font-size: 13.5px; color: var(--ink-3); }
+  #status.bad { color: var(--rubric); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Gloss</h1>
+  <p class="lede">Select a line on any page, press <b>Alt+Shift+G</b> (or click the toolbar icon), and ask Claude about it.</p>
+
+  <label for="key">Anthropic API key</label>
+  <input id="key" type="password" placeholder="sk-ant-..." autocomplete="off" spellcheck="false" />
+  <small>Kept in this browser only and sent to api.anthropic.com with your questions, nowhere else. <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">Get a key</a>.</small>
+
+  <label for="model">Model</label>
+  <select id="model"></select>
+
+  <label for="length">Answer length</label>
+  <select id="length">
+    <option value="short">Short (a sentence or two)</option>
+    <option value="normal">Normal</option>
+    <option value="long">Thorough</option>
+  </select>
+
+  <button id="save" type="button">Save</button><span id="status" role="status"></span>
+</main>
+<script src="options.js"></script>
+</body>
+</html>

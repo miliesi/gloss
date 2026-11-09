@@ -1,6 +1,6 @@
 /**
  * The model allow-list and wire types. Safe to import on the client: no keys,
- * no fetches. lib/together.ts does the network side.
+ * no fetches. lib/claude.ts does the network side.
  */
 
 export type ModelEntry = {
@@ -14,34 +14,30 @@ export type ModelEntry = {
 };
 
 /**
- * The allow-list. Route and UI both read it. Bake-off 2026-10-09: 3 sample
- * texts x 8 tasks on the real prompts, answers scored blind by a judge.
- *   V4.1 Flash  0.23s to first token, $0.0006 an answer, 7.3/10, best in 11 of 24
- *   V4 Pro      0.58s, $0.0052, 6.5/10
- *   Kimi K3     0.86s, $0.0096, 6.3/10 (best gloss summaries, weak on Related)
- *   GLM-5.3     0.36s at reasoning_effort low, $0.0048, 6.3/10, 3 of the 4 factual errors
- * GLM-5.3 ignores every thinking-off flag (default effort: a 60s summary).
- * Also left out: Qwen3.8 (prints its reasoning into content with thinking off).
+ * The allow-list. Route and UI both read it. Prices are Claude API list
+ * prices per million tokens; a cache write bills at 1.25x the input price.
+ * Swap `id` and the prices to move every answer to another Claude model:
+ * claude-opus-5-5 ($4 in, $0.20 cached, $20 out) is the more capable choice,
+ * claude-haiku-5-5 ($0.10 in, $0.50 out up to 100k tokens) the cheaper, faster one.
  *
- * Flash won on quality as well as speed and cost, so it answers everything:
- * there was a "Deep" choice (V4 Pro, then Kimi K3) and it was dropped
- * 2026-10-09. Older answers and settings may still name "pro"; anything that
- * looks a model up goes through modelOf(), which falls back to Flash.
+ * Older answers and settings may still name "flash" (the Together-era model
+ * key); anything that looks a model up goes through modelOf(), which falls
+ * back to the default.
  */
 export const MODELS = {
-  flash: {
-    id: "deepseek-ai/DeepSeek-V4.1-Flash",
-    label: "DeepSeek V4.1 Flash",
-    short: "Quick",
-    blurb: "Answers in about half a second. Best for most questions.",
-    inPerM: 0.3,
-    cachedPerM: 0.006,
-    outPerM: 1.2,
+  claude: {
+    id: "claude-sonnet-5-5",
+    label: "Claude Sonnet 5.5",
+    short: "Claude",
+    blurb: "Anthropic's Claude. Reads the whole text and cites paragraphs.",
+    inPerM: 2,
+    cachedPerM: 0.2,
+    outPerM: 10,
   },
 } as const satisfies Record<string, ModelEntry>;
 
 export type ModelKey = keyof typeof MODELS;
-export const DEFAULT_MODEL: ModelKey = "flash";
+export const DEFAULT_MODEL: ModelKey = "claude";
 
 export function isModelKey(v: unknown): v is ModelKey {
   return typeof v === "string" && v in MODELS;
@@ -57,11 +53,11 @@ export type Usage = {
   costUsd: number;
 };
 
-/** Dollars for a run. Cached prompt tokens bill at the cached rate. */
-export function costFor(key: ModelKey, prompt: number, cached: number, completion: number): number {
+/** Dollars for a run. `prompt` counts every input token; cache reads bill at the cached rate and cache writes at 1.25x. */
+export function costFor(key: ModelKey, prompt: number, cached: number, completion: number, written = 0): number {
   const m: ModelEntry = MODELS[key];
-  const fresh = Math.max(0, prompt - cached);
-  return (fresh * m.inPerM + cached * m.cachedPerM + completion * m.outPerM) / 1_000_000;
+  const fresh = Math.max(0, prompt - cached - written);
+  return (fresh * m.inPerM + written * m.inPerM * 1.25 + cached * m.cachedPerM + completion * m.outPerM) / 1_000_000;
 }
 
 /** A web result an answer can cite as [n]. */
@@ -71,7 +67,7 @@ export type StreamEvent =
   | { type: "meta"; model: string }
   | { type: "searching" }
   /** The model asked for a tool (web search); the route runs it and asks again. Never sent to the browser. */
-  | { type: "tool"; id: string; name: string; args: string }
+  | { type: "tool"; id: string; name: string; args: string; blocks?: unknown[] }
   /** Drop what was written so far: a line before a tool call ("I'll look that up") that the real answer replaces. */
   | { type: "reset" }
   | { type: "sources"; sources: Source[] }

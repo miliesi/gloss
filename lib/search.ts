@@ -8,6 +8,7 @@
  * are Exa's query-relevant highlights rather than whole pages, so the prompt stays small.
  */
 
+import type { ToolDef } from "./claude";
 import type { Source } from "./models";
 
 const EXA_URL = "https://api.exa.ai/search";
@@ -15,19 +16,16 @@ const EXA_URL = "https://api.exa.ai/search";
 export const SEARCH_USD = 0.004;
 
 /** The tool the model is offered. Its description is what decides when it searches. */
-export const WEB_TOOL = {
-  type: "function",
-  function: {
-    name: "web_search",
-    description:
-      "Search the web for facts the text does not give: who a named person, organisation or place is, what a named work, event or term refers to, or what has happened since the text was written. Do not search for what the text itself says.",
-    parameters: {
-      type: "object",
-      properties: { query: { type: "string", description: "What to look up, in a few words, e.g. \"Alan G. Chynoweth Bellcore physicist\"" } },
-      required: ["query"],
-    },
+export const WEB_TOOL: ToolDef = {
+  name: "web_search",
+  description:
+    "Search the web for facts the text does not give: who a named person, organisation or place is, what a named work, event or term refers to, or what has happened since the text was written. Do not search for what the text itself says.",
+  input_schema: {
+    type: "object",
+    properties: { query: { type: "string", description: "What to look up, in a few words, e.g. \"Alan G. Chynoweth Bellcore physicist\"" } },
+    required: ["query"],
   },
-} as const;
+};
 const RESULTS = 5;
 
 export const searchEnabled = () => Boolean(process.env.EXA_API_KEY);

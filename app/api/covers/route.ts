@@ -26,9 +26,9 @@ export async function POST(req: Request) {
   const apiKey = body.apiKey?.trim() || undefined;
   let free: Awaited<ReturnType<typeof checkFree>> | null = null;
   if (!apiKey) {
-    if (!process.env.TOGETHER_API_KEY) return needKey(null);
+    if (!process.env.GEMINI_API_KEY) return needKey(null, undefined, "Gemini");
     free = await checkFree(req, 12);
-    if (!free.ok) return needKey(free);
+    if (!free.ok) return needKey(free, undefined, "Gemini");
   }
   const r = await paintCover({ scene, topic: body.topic, apiKey, signal: req.signal });
   if (!r.ok) return Response.json({ error: r.error }, { status: 502 });

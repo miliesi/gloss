@@ -1,25 +1,20 @@
 import { chargeFree, checkFree, needKey } from "@/lib/quota";
-import { APP_UA, TOGETHER_URL } from "@/lib/together";
+import Anthropic from "@anthropic-ai/sdk";
+import { describe, MISSING_KEY } from "@/lib/claude";
+import { MODELS, costFor } from "@/lib/models";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
 /**
  * One PDF page the text layer cannot give us (a scan, an image of text, garbled
- * glyphs), read by a vision model into Markdown. Qwen3.8 Flash is the vision
- * model Together serves per request; the dedicated OCR models (GLM-OCR,
- * DeepSeek-OCR-2) need their own endpoint. Checked 2026-10-10.
- */
-const MODEL = "Qwen/Qwen3.8-Flash";
-const PRICE = { inPerM: 0.15, outPerM: 0.47 };
-/**
+ * glyphs), read by Claude's vision into Markdown.
+ *
  * mode "layout": a page whose text layer reads but whose layout came out
  * badly (columns, tables, maths), read again in the background
- * (lib/upgrade.ts). Qwen3.5-9B scored 6.9/10 on such pages in
- * scripts/pdf-eval against 3.9 for the text layer, at about $0.0005 a page.
+ * (lib/upgrade.ts). A page is a sharp, bounded job, so it runs at low effort.
  */
-const LAYOUT_MODEL = "Qwen/Qwen3.5-9B";
-const LAYOUT_PRICE = { inPerM: 0.17, outPerM: 0.25 };
+const MODEL = MODELS.claude;
 const MAX_IMAGE_CHARS = 3_500_000;
 
 const PROMPT = `Transcribe this document page into clean Markdown, in reading order.
@@ -61,70 +56,47 @@ export async function POST(req: Request) {
   const own = body.apiKey?.trim() || headerKey || undefined;
   let free: Awaited<ReturnType<typeof checkFree>> | null = null;
   if (!own) {
-    if (!process.env.TOGETHER_API_KEY) return needKey(null);
+    if (!process.env.ANTHROPIC_API_KEY) return needKey(null);
     free = await checkFree(req, 90);
     if (!free.ok) return needKey(free);
   }
 
   const layout = body.mode === "layout";
-  const model = layout ? LAYOUT_MODEL : MODEL;
-  const price = layout ? LAYOUT_PRICE : PRICE;
+  const [, mediaType, data] = image.match(/^data:(image\/(?:jpeg|png|webp));base64,(.*)$/s) ?? [];
+  const apiKey = own ?? process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return Response.json({ error: MISSING_KEY }, { status: 401 });
 
-  let res: Response;
+  let message: Anthropic.Message;
   try {
-    res = await fetch(TOGETHER_URL, {
-      method: "POST",
-      signal: req.signal,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${own ?? process.env.TOGETHER_API_KEY}`, "User-Agent": APP_UA },
-      body: JSON.stringify({
-        model,
-        stream: true, // Qwen3.8 Flash only answers as a stream
-        stream_options: { include_usage: true },
-        temperature: 0,
-        max_tokens: 4096,
-        chat_template_kwargs: { enable_thinking: false },
-        messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: image } }, { type: "text", text: layout ? LAYOUT_PROMPT : PROMPT }] }],
-      }),
-    });
-  } catch {
-    return Response.json({ error: "Could not reach the page reader." }, { status: 502 });
+    message = await new Anthropic({ apiKey }).messages.stream(
+      {
+        model: MODEL.id,
+        max_tokens: 12_000, // thinking spends from this before the page starts
+        output_config: { effort: "low" },
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: mediaType as "image/jpeg" | "image/png" | "image/webp", data } },
+              { type: "text", text: layout ? LAYOUT_PROMPT : PROMPT },
+            ],
+          },
+        ],
+      },
+      { signal: req.signal }
+    ).finalMessage();
+  } catch (e) {
+    const status = e instanceof Anthropic.AuthenticationError ? 401 : e instanceof Anthropic.RateLimitError ? 429 : 502;
+    return Response.json({ error: describe(e) }, { status });
   }
-  if (!res.ok || !res.body) {
-    let msg = `The page reader answered ${res.status}.`;
-    try {
-      const j = (await res.json()) as { error?: { message?: string } | string };
-      msg = typeof j.error === "string" ? j.error : j.error?.message ?? msg;
-    } catch {}
-    return Response.json({ error: msg }, { status: res.status === 401 || res.status === 429 ? res.status : 502 });
-  }
-
-  // Gather the stream: the content, and what it cost.
-  let text = "";
-  type Usage = { prompt_tokens?: number; completion_tokens?: number };
-  let usage: Usage | null = null;
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let buf = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    const lines = buf.split("\n");
-    buf = lines.pop() ?? "";
-    for (const line of lines) {
-      const data = line.trim().replace(/^data:\s*/, "");
-      if (!data || data === "[DONE]" || !line.trim().startsWith("data:")) continue;
-      try {
-        const j = JSON.parse(data) as { choices?: { delta?: { content?: string } }[]; usage?: Usage };
-        text += j.choices?.[0]?.delta?.content ?? "";
-        if (j.usage) usage = j.usage;
-      } catch {}
-    }
-  }
+  const text = message.content.map((b) => (b.type === "text" ? b.text : "")).join("");
 
   if (free) {
-    const cost = ((usage?.prompt_tokens ?? 1900) * price.inPerM + (usage?.completion_tokens ?? 1000) * price.outPerM) / 1_000_000;
-    await chargeFree(free.subject, cost);
+    const u = message.usage;
+    const read = u.cache_read_input_tokens ?? 0;
+    const written = u.cache_creation_input_tokens ?? 0;
+    const prompt = (u.input_tokens ?? 0) + read + written;
+    await chargeFree(free.subject, costFor("claude", prompt || 1900, read, u.output_tokens || 1000, written));
   }
   return Response.json({ markdown: clean(text) });
 }

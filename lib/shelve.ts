@@ -7,7 +7,7 @@
 
 import { cleanTags, TOPICS, topicOf, type Shelving } from "./library";
 import { EXCERPT_CHARS } from "./excerpt";
-import { completeJSON, DEFAULT_MODEL } from "./together";
+import { completeJSON, DEFAULT_MODEL } from "./claude";
 
 export type ShelveInput = { title: string; author?: string; source?: string; dek?: string; excerpt?: string };
 
@@ -39,7 +39,7 @@ export async function classify(
     model: DEFAULT_MODEL,
     apiKey: opts.apiKey,
     signal: opts.signal,
-    maxTokens: 220,
+    maxTokens: 400,
     messages: [
       { role: "system", content: SYSTEM },
       { role: "user", content: lines.join("\n") },

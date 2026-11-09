@@ -5,7 +5,7 @@ import { create } from "zustand";
 import { Headphones, LoaderCircle, Pause, Play, Square } from "lucide-react";
 import { blockEl } from "@/lib/anchor";
 import { blockText, type Block } from "@/lib/article";
-import { openKeyMenu, readApiKey } from "@/lib/ask";
+import { openKeyMenu, readGeminiKey } from "@/lib/ask";
 import type { DocIndex } from "@/lib/doc";
 import { useStore } from "@/lib/store";
 import { TTS_MAX_CHARS } from "@/lib/voice";
@@ -84,7 +84,7 @@ function clip(i: number): Promise<string> {
     p = fetch("/api/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: items[i].text, apiKey: readApiKey() || undefined }),
+      body: JSON.stringify({ text: items[i].text, apiKey: readGeminiKey() || undefined }),
       signal,
     }).then(async (r) => {
       if (!r.ok) {
@@ -143,8 +143,8 @@ async function playAt(i: number, s: number) {
 export function startListening(ix: DocIndex, fromBlock: string | null) {
   stopListening();
   // Reading aloud always uses the reader's own key: say so before anything is fetched.
-  if (!readApiKey()) {
-    useListen.setState({ status: "error", needKey: true, error: "Reading aloud uses your own Together key." });
+  if (!readGeminiKey()) {
+    useListen.setState({ status: "error", needKey: true, error: "Reading aloud uses your own Gemini key." });
     return;
   }
   const blocks = ix.article.blocks;

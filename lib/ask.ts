@@ -7,15 +7,22 @@ import { uid, useStore, type Anchor, type Gloss, type Turn } from "./store";
 import type { ModelKey, StreamEvent, Usage } from "./models";
 import { MODELS, modelOf } from "./models";
 
-const KEY_STORAGE = "together:api-key";
+/** The reader's own keys, kept in this browser only. Claude answers; Gemini speaks and paints covers. */
+export const KEY_STORAGE = { anthropic: "anthropic:api-key", gemini: "gemini:api-key" } as const;
+export type KeyProvider = keyof typeof KEY_STORAGE;
 
-export function readApiKey(): string {
+function readKey(provider: KeyProvider): string {
   try {
-    return localStorage.getItem(KEY_STORAGE) ?? "";
+    return localStorage.getItem(KEY_STORAGE[provider]) ?? "";
   } catch {
     return "";
   }
 }
+
+/** The Anthropic key: answers, briefs, shelving and scanned pages. */
+export const readApiKey = () => readKey("anthropic");
+/** The Gemini key: reading aloud and painted covers. */
+export const readGeminiKey = () => readKey("gemini");
 
 const controllers = new Map<string, AbortController>();
 
@@ -222,9 +229,9 @@ export function openKeyMenu() {
   window.dispatchEvent(new Event("gloss:key"));
 }
 
-export async function validateKey(key: string): Promise<boolean> {
+export async function validateKey(key: string, provider: KeyProvider = "anthropic"): Promise<boolean> {
   try {
-    const res = await fetch("/api/key", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey: key }) });
+    const res = await fetch("/api/key", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey: key, provider }) });
     return ((await res.json()) as { ok?: boolean }).ok === true;
   } catch {
     return false;

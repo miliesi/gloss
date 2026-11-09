@@ -1,6 +1,6 @@
 /**
- * The free allowance on the shared Together key, in dollars: what a reader's
- * answers and briefs actually cost Together, up to a small amount a day
+ * The free allowance on the shared house keys, in dollars: what a reader's
+ * answers and briefs actually cost, up to a small amount a day
  * (more when signed in). After that they bring their own key, which is never
  * counted. A ceiling across everyone keeps a rush of visitors bounded.
  * Reading aloud is never free: it uses the reader's own key.
@@ -106,16 +106,16 @@ export async function peekFree(req: Request): Promise<{ left: number; signedIn: 
 }
 
 /** The JSON a route answers with when a reader needs their own key. */
-export function needKey(state: FreeState | null, message?: string): Response {
+export function needKey(state: FreeState | null, message?: string, provider = "Anthropic"): Response {
   if (state?.reason === "burst") return Response.json({ error: "That's a lot at once. Wait a moment, then try again." }, { status: 429 });
   const error =
     message ??
     (!state
-      ? "Add your Together API key to start. It stays in this browser."
+      ? `Add your ${provider} API key to start. It stays in this browser.`
       : state.reason === "everyone"
-        ? "Free answers are resting for today. Add your Together API key to keep going."
+        ? `Free answers are resting for today. Add your ${provider} API key to keep going.`
         : state.signedIn
-          ? "That's today's free reading. Add your Together API key to keep going, or come back tomorrow."
-          : "That's today's free reading. Sign in for more, or add your Together API key to keep going.");
+          ? `That's today's free reading. Add your ${provider} API key to keep going, or come back tomorrow.`
+          : `That's today's free reading. Sign in for more, or add your ${provider} API key to keep going.`);
   return Response.json({ error, code: "need_key", signIn: Boolean(state && !state.signedIn && state.reason === "reader") }, { status: state ? 429 : 401, headers: { "X-Free-Left": "0" } });
 }

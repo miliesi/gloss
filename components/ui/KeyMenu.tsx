@@ -2,25 +2,29 @@
 
 import { useEffect, useState } from "react";
 import { KeyRound } from "lucide-react";
-import { validateKey } from "@/lib/ask";
+import { KEY_STORAGE, validateKey, type KeyProvider } from "@/lib/ask";
 import { BRAND } from "@/lib/brand";
 import { Popover, barBtn } from "./Popover";
-
-const STORAGE_KEY = "together:api-key";
 
 /** Today's free use of the shared key, as the share still unspent (0 to 1). */
 type Free = { left: number; signedIn: boolean };
 
-/** Bring your own Together key. Stored in this browser only. A little reading a day is free without one. */
+const store = (provider: KeyProvider) => {
+  try {
+    return localStorage.getItem(KEY_STORAGE[provider]) ?? "";
+  } catch {
+    return "";
+  }
+};
+
+/** Bring your own keys. Stored in this browser only. A little reading a day is free without one. */
 export function KeyMenu() {
-  const [key, setKey] = useState("");
+  const [keys, setKeys] = useState<Record<KeyProvider, string>>({ anthropic: "", gemini: "" });
   const [house, setHouse] = useState<boolean | null>(null);
   const [free, setFree] = useState<Free | null>(null);
 
   useEffect(() => {
-    try {
-      setKey(localStorage.getItem(STORAGE_KEY) ?? "");
-    } catch {}
+    setKeys({ anthropic: store("anthropic"), gemini: store("gemini") });
     fetch("/api/key")
       .then((r) => r.json())
       .then((j: { house?: boolean; free?: Free | null }) => {
@@ -34,13 +38,14 @@ export function KeyMenu() {
     return () => window.removeEventListener("gloss:free", onFree);
   }, []);
 
+  const key = keys.anthropic;
   const spent = house === false || free?.left === 0;
   const status = key ? "Your key" : spent ? "Add a key" : free && free.left <= 0.25 ? "Low on free use" : null;
 
   return (
     <Popover
-      label="Together API key"
-      tip={key ? "Using your Together key" : "Add your Together key"}
+      label="API keys"
+      tip={key ? "Using your Anthropic key" : "Add your API keys"}
       width={320}
       triggerClass={barBtn}
       openOn="gloss:key"
@@ -51,49 +56,62 @@ export function KeyMenu() {
         </>
       }
     >
-      {(close) => <KeyPanel current={key} house={house} free={free} onSave={(v) => setKey(v)} close={close} />}
+      {(close) => <KeyPanel current={keys} house={house} free={free} onSave={setKeys} close={close} />}
     </Popover>
   );
 }
 
-function KeyPanel({ current, house, free, onSave, close }: { current: string; house: boolean | null; free: Free | null; onSave: (v: string) => void; close: () => void }) {
+const FIELDS: { provider: KeyProvider; title: string; placeholder: string; href: string; link: string; bad: string }[] = [
+  { provider: "anthropic", title: "Your Anthropic API key", placeholder: "sk-ant-...", href: BRAND.keysUrl, link: "Get a key from Anthropic", bad: "Anthropic rejected that key. Check it and try again." },
+  { provider: "gemini", title: "Your Gemini API key, for reading aloud", placeholder: "AIza...", href: BRAND.geminiKeysUrl, link: "Get a key from Google AI Studio", bad: "Gemini rejected that key. Check it and try again." },
+];
+
+function KeyPanel({ current, house, free, onSave, close }: { current: Record<KeyProvider, string>; house: boolean | null; free: Free | null; onSave: (v: Record<KeyProvider, string>) => void; close: () => void }) {
   const [draft, setDraft] = useState(current);
-  const [state, setState] = useState<"idle" | "checking" | "bad">("idle");
+  const [state, setState] = useState<"idle" | "checking">("idle");
+  const [bad, setBad] = useState<KeyProvider | null>(null);
 
   const save = async () => {
-    const v = draft.trim();
-    if (!v) {
-      try {
-        localStorage.removeItem(STORAGE_KEY);
-      } catch {}
-      onSave("");
-      close();
-      return;
-    }
+    const next = { ...current };
     setState("checking");
-    const ok = await validateKey(v);
-    if (!ok) {
-      setState("bad");
-      return;
+    for (const { provider } of FIELDS) {
+      const v = draft[provider].trim();
+      if (v && v !== current[provider] && !(await validateKey(v, provider))) {
+        setState("idle");
+        setBad(provider);
+        return;
+      }
+      next[provider] = v;
+      try {
+        if (v) localStorage.setItem(KEY_STORAGE[provider], v);
+        else localStorage.removeItem(KEY_STORAGE[provider]);
+      } catch {}
     }
-    try {
-      localStorage.setItem(STORAGE_KEY, v);
-    } catch {}
-    onSave(v);
+    onSave(next);
     close();
+  };
+
+  const clear = () => {
+    setDraft({ anthropic: "", gemini: "" });
+    for (const { provider } of FIELDS) {
+      try {
+        localStorage.removeItem(KEY_STORAGE[provider]);
+      } catch {}
+    }
+    onSave({ anthropic: "", gemini: "" });
   };
 
   return (
     <div>
-      <p className="text-[13.5px] font-medium text-ink">Your Together API key</p>
+      <p className="text-[13.5px] font-medium text-ink">Your API keys</p>
       <p className="mt-1 text-[12.5px] leading-snug text-ink-3">
-        {current
-          ? "Answers and reading aloud use your key, with no daily limit."
+        {current.anthropic
+          ? "Answers use your key, with no daily limit."
           : house && free
-            ? `Free use resets each day${free.signedIn ? "" : ", and signing in doubles it"}. After that, answers need your key. Reading aloud always does.`
+            ? `Free use resets each day${free.signedIn ? "" : ", and signing in doubles it"}. After that, answers need your key. Reading aloud always needs a Gemini key.`
             : "Add your key to start asking."}
       </p>
-      {!current && house && free && (
+      {!current.anthropic && house && free && (
         <div className="mt-3">
           <div className="flex items-baseline justify-between text-[11.5px] text-ink-3">
             <span>Free today</span>
@@ -104,49 +122,44 @@ function KeyPanel({ current, house, free, onSave, close }: { current: string; ho
           </span>
         </div>
       )}
-      <input
-        autoFocus
-        type="password"
-        value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          setState("idle");
-        }}
-        onKeyDown={(e) => e.key === "Enter" && save()}
-        placeholder="tgp_v1_..."
-        autoComplete="off"
-        spellCheck={false}
-        aria-label="Together API key"
-        className="mt-3 h-9 w-full rounded-lg border border-rule bg-bg px-3 text-[13px] tracking-wide text-ink outline-none focus-visible:outline-none placeholder:text-ink-4 focus:border-rule-strong"
-      />
-      {state === "bad" && <p className="mt-2 text-[12.5px] text-rubric-text">Together rejected that key. Check it and try again.</p>}
+      {FIELDS.map((f, i) => (
+        <div key={f.provider} className={i === 0 ? "mt-3" : "mt-4"}>
+          <div className="flex items-baseline justify-between">
+            <label htmlFor={`key-${f.provider}`} className="text-[12.5px] font-medium text-ink-2">
+              {f.title}
+            </label>
+            <a href={f.href} target="_blank" rel="noopener noreferrer" className="text-[12px] text-rubric-text underline decoration-rule-strong underline-offset-4">
+              {f.link}
+            </a>
+          </div>
+          <input
+            id={`key-${f.provider}`}
+            autoFocus={i === 0}
+            type="password"
+            value={draft[f.provider]}
+            onChange={(e) => {
+              setDraft({ ...draft, [f.provider]: e.target.value });
+              setBad(null);
+            }}
+            onKeyDown={(e) => e.key === "Enter" && save()}
+            placeholder={f.placeholder}
+            autoComplete="off"
+            spellCheck={false}
+            aria-label={f.title}
+            className="mt-1.5 h-9 w-full rounded-lg border border-rule bg-bg px-3 text-[13px] tracking-wide text-ink outline-none focus-visible:outline-none placeholder:text-ink-4 focus:border-rule-strong"
+          />
+          {bad === f.provider && <p className="mt-2 text-[12.5px] text-rubric-text">{f.bad}</p>}
+        </div>
+      ))}
       <p className="mt-2 text-[11.5px] leading-snug text-ink-4">Sent with your requests only. Stored in this browser, never on a server, never logged.</p>
-      <div className="mt-3 flex items-center justify-between">
-        <a href={BRAND.keysUrl} target="_blank" rel="noopener noreferrer" className="text-[12.5px] text-rubric-text underline decoration-rule-strong underline-offset-4">
-          Get a key on Together
-        </a>
+      <div className="mt-3 flex items-center justify-end">
         <div className="flex gap-1.5">
-          {current && (
-            <button
-              type="button"
-              onClick={() => {
-                setDraft("");
-                try {
-                  localStorage.removeItem(STORAGE_KEY);
-                } catch {}
-                onSave("");
-              }}
-              className="h-8 rounded-lg px-3 text-[12.5px] font-medium text-ink-2 hover:bg-sunk"
-            >
+          {(current.anthropic || current.gemini) && (
+            <button type="button" onClick={clear} className="h-8 rounded-lg px-3 text-[12.5px] font-medium text-ink-2 hover:bg-sunk">
               Clear
             </button>
           )}
-          <button
-            type="button"
-            onClick={save}
-            disabled={state === "checking"}
-            className="h-8 rounded-lg bg-ink px-3.5 text-[12.5px] font-medium text-bg disabled:opacity-60"
-          >
+          <button type="button" onClick={save} disabled={state === "checking"} className="h-8 rounded-lg bg-ink px-3.5 text-[12.5px] font-medium text-bg disabled:opacity-60">
             {state === "checking" ? "Checking" : "Save"}
           </button>
         </div>

@@ -557,11 +557,11 @@ function ReaderInner({ article }: { article: Article }) {
                 </p>
                 {article.source && <p>From {article.source}.</p>}
                 <p className="mt-1">
-                  Glosses are powered by DeepSeek V4.1 Flash, served by{" "}
-                  <a href={BRAND.togetherUrl} target="_blank" rel="noopener noreferrer" className="text-ink-2 underline decoration-rule-strong underline-offset-4 hover:text-ink">
-                    Together AI
+                  Glosses are written by{" "}
+                  <a href={BRAND.claudeUrl} target="_blank" rel="noopener noreferrer" className="text-ink-2 underline decoration-rule-strong underline-offset-4 hover:text-ink">
+                    Claude
                   </a>
-                  .
+                  , from Anthropic.
                 </p>
                 <div className="mt-6 flex flex-wrap gap-2">
                   <button type="button" onClick={() => setUI({ notebookOpen: true })} className="h-9 rounded-full border border-rule px-4 text-[13px] font-medium text-ink-2 hover:border-rule-strong hover:text-ink">
